@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Member represents a user of the coaching system
+model Member {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  coachAssignments MemberCoachAssignment[]
+  sessions         CoachingSession[]
+
+  @@map("members")
+}
+
+// CoachPersona represents a distinct coaching style/archetype
+model CoachPersona {
+  id                       String   @id @default(uuid())
+  key                      String   @unique // e.g., "empathetic-supporter", "strategic-challenger"
+  name                     String   // Display name
+  styleDescriptionMarkdown String   @db.Text // Markdown description of coaching style
+  configJson               Json     @default("{}") // JSON config for AI prompt parameters, temperature, etc.
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  // Relations
+  memberAssignments MemberCoachAssignment[]
+  sessions          CoachingSession[]
+
+  @@map("coach_personas")
+}
+
+// MemberCoachAssignment tracks which coaches are assigned to which members
+model MemberCoachAssignment {
+  id             String   @id @default(uuid())
+  memberId       String
+  coachPersonaId String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  member       Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  coachPersona CoachPersona  @relation(fields: [coachPersonaId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, coachPersonaId])
+  @@index([memberId, active])
+  @@map("member_coach_assignments")
+}
+
+// CoachingSession represents a single coaching conversation
+model CoachingSession {
+  id             String    @id @default(uuid())
+  memberId       String
+  coachPersonaId String
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime? // null while session is active
+  transcriptJson Json      @default("[]") // Array of message objects: [{role, content, timestamp}]
+  summaryMarkdown String?   @db.Text // Generated at session end
+  actionItemsJson Json?     // Array of action items: [{title, description, priority, dueDate}]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  coachPersona CoachPersona @relation(fields: [coachPersonaId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([coachPersonaId])
+  @@index([startedAt])
+  @@map("coaching_sessions")
+}
