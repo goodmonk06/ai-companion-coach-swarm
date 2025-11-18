@@ -2,17 +2,21 @@
 
 メンバーごとにパーソナルAIコーチを割り当てる「コーチ群」基盤。日々の振り返りや目標フォローを自動化。
 
-A personal AI coaching platform that enables members to have coaching conversations with multiple AI companions, each with distinct coaching styles and personalities. Designed for daily reflection, goal tracking, and personal development.
+A personal AI coaching platform that enables members to have coaching conversations with multiple AI companions, each with distinct coaching styles and personalities. Designed for daily reflection, goal tracking, and personal development with persistent, structured data.
 
 ## 🌟 Overview
 
-The AI Companion Coach Swarm is a bounded, safe tool for personal growth and reflection. It provides:
+The AI Companion Coach Swarm is a **production-ready, event-driven coaching platform** that provides:
 
-- **Multiple Coach Personas**: Each with unique coaching styles (empathetic, strategic, mindful, pragmatic, creative)
-- **Session Management**: Start, engage in, and end coaching sessions with persistent conversation history
-- **AI-Powered Dialogue**: Contextual coaching responses using Claude (Anthropic)
-- **Automatic Summarization**: Session summaries and actionable insights generated at session end
-- **Structured Data**: All conversations, summaries, and action items stored in PostgreSQL
+- **Multiple Coach Personas**: 5 distinct coaching archetypes (Empathetic Supporter, Strategic Challenger, Mindful Guide, Pragmatic Mentor, Creative Catalyst)
+- **Session Management**: Full coaching conversations with AI-generated summaries and action items
+- **Goal Tracking**: Create trackable goals with milestones, progress monitoring, and insights
+- **Session Templates**: Reusable guided coaching flows for common scenarios
+- **Quick Reflections**: Standalone reflections with mood tracking and tagging
+- **Analytics & Insights**: Member analytics, activity trends, and goal completion rates
+- **Flexible Tagging**: Tag system for organizing sessions, goals, and reflections
+- **Event-Driven Architecture**: Extensible event system for integrations
+- **Adapter Pattern**: Plugin points for notifications, metrics, storage, and more
 
 ## ⚠️ Important Usage Notes
 
@@ -30,6 +34,7 @@ This is a **companion tool** designed to supplement, not replace, human coaching
 - **Backend**: Node.js + Fastify + TypeScript
 - **Database**: PostgreSQL + Prisma ORM
 - **LLM**: Anthropic Claude (for coaching dialogue)
+- **Infrastructure**: Error handling, logging, metrics, events
 - **Testing**: Vitest
 - **Container**: Docker + Docker Compose
 
@@ -37,20 +42,20 @@ This is a **companion tool** designed to supplement, not replace, human coaching
 
 ```
 Member (User)
-  ├── MemberCoachAssignment (Many-to-Many)
-  │   └── CoachPersona (Coach archetype)
-  └── CoachingSession (Conversation)
-      ├── transcriptJson (Message history)
-      ├── summaryMarkdown (AI-generated summary)
-      └── actionItemsJson (Extracted action items)
+  ├── MemberPreferences (1:1)
+  ├── MemberCoachAssignment (Many-to-Many) → CoachPersona
+  ├── CoachingSession (1:N)
+  │   ├── SessionTemplate (optional)
+  │   └── SessionTag (via Tag)
+  ├── CoachingGoal (1:N)
+  │   ├── CoachPersona (optional)
+  │   ├── Milestones (JSON)
+  │   └── GoalTag (via Tag)
+  └── Reflection (1:N)
+      └── ReflectionTag (via Tag)
 ```
 
-### Key Entities
-
-- **Member**: A user of the coaching system
-- **CoachPersona**: A distinct coaching style/archetype (empathetic, strategic, etc.)
-- **MemberCoachAssignment**: Links members to their assigned coaches
-- **CoachingSession**: A single coaching conversation with full transcript and summary
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
 
 ## 🚀 Quick Start
 
@@ -104,147 +109,183 @@ make db-studio    # Open Prisma Studio (DB GUI)
 
 ## 📚 API Reference
 
-### Sessions
+### Core Endpoints
 
-#### Start a Session
-```http
-POST /api/sessions/start
-Content-Type: application/json
+#### Sessions
+- `POST /api/sessions/start` - Start coaching session
+- `POST /api/sessions/:id/message` - Send message
+- `POST /api/sessions/:id/end` - End session with summary
+- `GET /api/sessions/:id` - Get session details
+- `GET /api/sessions/member/:memberId` - Get member sessions
 
-{
-  "memberId": "uuid",
-  "coachPersonaId": "uuid"
-}
+#### Goals
+- `POST /api/goals` - Create goal
+- `GET /api/goals/member/:memberId` - List member goals
+- `GET /api/goals/:id` - Get goal details
+- `PATCH /api/goals/:id` - Update goal
+- `POST /api/goals/:id/progress` - Update progress
+- `POST /api/goals/:id/milestones` - Add milestone
+- `POST /api/goals/:id/milestones/:milestoneId/complete` - Complete milestone
+- `GET /api/goals/:id/insights` - Get goal insights
+- `DELETE /api/goals/:id` - Delete goal
 
-Response:
-{
-  "sessionId": "uuid",
-  "coachName": "Empathetic Supporter",
-  "message": "Welcome! How can I support you today?"
-}
-```
+#### Templates
+- `POST /api/templates` - Create template
+- `GET /api/templates` - List all templates
+- `GET /api/templates/:id` - Get template details
 
-#### Send a Message
-```http
-POST /api/sessions/:id/message
-Content-Type: application/json
+#### Reflections
+- `POST /api/reflections` - Create reflection
+- `GET /api/reflections/member/:memberId` - List member reflections
+- `GET /api/reflections/:id` - Get reflection
+- `PATCH /api/reflections/:id` - Update reflection
+- `DELETE /api/reflections/:id` - Delete reflection
 
-{
-  "message": "I'm feeling stuck on my career goals..."
-}
+#### Tags
+- `POST /api/tags` - Create tag
+- `GET /api/tags` - List all tags
+- `POST /api/tags/tag-entity` - Tag an entity
 
-Response:
-{
-  "response": "I hear that you're feeling stuck...",
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
+#### Analytics
+- `GET /api/analytics/member/:memberId` - Get member analytics
 
-#### End a Session
-```http
-POST /api/sessions/:id/end
+#### Coaches
+- `GET /api/coaches` - List all coaches
+- `GET /api/coaches/:id` - Get coach details
+- `GET /api/coaches/member/:memberId` - Get member's coaches
+- `POST /api/coaches/assign` - Assign coach to member
+- `DELETE /api/coaches/assign` - Unassign coach from member
 
-Response:
-{
-  "summary": "In this session, we explored...",
-  "actionItems": [
-    {
-      "title": "Define one career goal",
-      "description": "Write down a specific, measurable goal",
-      "priority": "high"
-    }
-  ],
-  "sessionDurationMinutes": 15
-}
-```
-
-#### Get Session Details
-```http
-GET /api/sessions/:id
-
-Response:
-{
-  "id": "uuid",
-  "memberId": "uuid",
-  "coachPersonaId": "uuid",
-  "startedAt": "2024-01-15T10:00:00Z",
-  "endedAt": "2024-01-15T10:15:00Z",
-  "transcript": [...],
-  "summaryMarkdown": "...",
-  "actionItems": [...]
-}
-```
-
-### Coaches
-
-#### List All Coaches
-```http
-GET /api/coaches
-
-Response:
-[
-  {
-    "id": "uuid",
-    "key": "empathetic-supporter",
-    "name": "Empathetic Supporter",
-    "styleDescriptionMarkdown": "...",
-    "configJson": {...}
-  }
-]
-```
-
-#### Assign Coach to Member
-```http
-POST /api/coaches/assign
-Content-Type: application/json
-
-{
-  "memberId": "uuid",
-  "coachPersonaId": "uuid"
-}
-```
-
-### Members
-
-#### Create Member
-```http
-POST /api/members
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "name": "Jane Doe"
-}
-```
-
-#### Get Member
-```http
-GET /api/members/:id
-```
+#### Members
+- `POST /api/members` - Create member
+- `GET /api/members` - List all members
+- `GET /api/members/:id` - Get member details
+- `GET /api/members/email/:email` - Get member by email
+- `PATCH /api/members/:id` - Update member
+- `DELETE /api/members/:id` - Delete member
 
 ## 🎭 Coach Personas
 
 The system includes 5 diverse coaching styles:
 
-1. **Empathetic Supporter**
+1. **Empathetic Supporter** 💙
    - Warm, validating, emotionally supportive
-   - Best for: Processing emotions, building confidence
+   - Best for: Processing emotions, building confidence, work-life balance
+   - Specialties: emotional-support, confidence-building
 
-2. **Strategic Challenger**
+2. **Strategic Challenger** 🎯
    - Direct, results-oriented, thought-provoking
-   - Best for: Career advancement, breaking plateaus
+   - Best for: Career advancement, breaking plateaus, strategic decisions
+   - Specialties: career-advancement, goal-setting, decision-making
 
-3. **Mindful Guide**
+3. **Mindful Guide** 🧘
    - Contemplative, awareness-focused, reflective
-   - Best for: Stress management, self-awareness
+   - Best for: Stress management, self-awareness, mindfulness
+   - Specialties: stress-management, self-awareness, mindfulness
 
-4. **Pragmatic Mentor**
+4. **Pragmatic Mentor** 📊
    - Practical, framework-driven, skill-focused
-   - Best for: Learning skills, productivity
+   - Best for: Learning skills, productivity, time management
+   - Specialties: productivity, time-management, skill-building
 
-5. **Creative Catalyst**
+5. **Creative Catalyst** 🎨
    - Energetic, innovative, exploratory
-   - Best for: Innovation, creative blocks
+   - Best for: Innovation, creative blocks, problem-solving
+   - Specialties: innovation, creative-thinking, problem-solving
+
+## 🎯 Key Features
+
+### Goal Tracking
+
+Track goals with milestones, progress monitoring, and intelligent insights:
+
+```json
+{
+  "title": "Become a Tech Lead within 12 months",
+  "status": "ACTIVE",
+  "priority": "HIGH",
+  "progress": 35,
+  "milestones": [
+    { "title": "Complete leadership training", "completed": true },
+    { "title": "Mentor 2 junior developers", "completed": false },
+    { "title": "Present at tech conference", "completed": false }
+  ]
+}
+```
+
+Goal insights provide:
+- Days since creation
+- Days to target
+- Progress rate
+- Estimated completion date
+- Related sessions count
+
+### Session Templates
+
+Pre-built templates for common scenarios:
+
+- **Career Goal Setting** (45 min, intermediate)
+- **Stress Management & Mindfulness** (30 min, beginner)
+- **Weekly Reflection & Planning** (20 min, beginner)
+
+Each template includes guided prompts, estimated duration, and recommended coach.
+
+### Quick Reflections
+
+Capture thoughts quickly with mood tracking:
+
+```json
+{
+  "content": "Had a productive 1-on-1 today...",
+  "mood": "motivated",
+  "tags": ["grateful", "career"]
+}
+```
+
+### Analytics Dashboard
+
+Comprehensive member analytics:
+- Total sessions, goals, reflections
+- Goal completion rate
+- Average session duration
+- Most-used coach
+- Recent activity trends
+- Streak tracking
+
+### Event-Driven Integration
+
+Subscribe to domain events for custom workflows:
+
+```typescript
+eventBus.on(EventTypes.GOAL_COMPLETED, async (event) => {
+  // Send celebration notification
+  // Update achievements
+  // Trigger rewards
+});
+```
+
+20+ domain events including:
+- Session events (started, ended, archived)
+- Goal events (created, progress, milestone, completed)
+- Reflection events (created, updated, deleted)
+- Member events (created, updated, preferences)
+- Tag events (created, entity tagged)
+
+### Extension Points
+
+Adapter interfaces for external integrations:
+
+```typescript
+// Notifications
+INotificationAdapter - Email, push, SMS
+IMetricsAdapter - Prometheus, DataDog
+IExternalProfileAdapter - User profile sync
+IStorageAdapter - S3, file storage
+IAnalyticsAdapter - Segment, Mixpanel
+IAIAdapter - Alternative LLM providers
+```
+
+See [docs/INTEGRATION_RECIPES.md](docs/INTEGRATION_RECIPES.md) for integration examples.
 
 ## 🧪 Testing
 
@@ -254,6 +295,12 @@ npm test
 
 # Run with coverage
 npm run test:coverage
+
+# Watch mode
+npm run test:watch
+
+# Type check
+npm run typecheck
 
 # Run specific test file
 npx vitest src/services/__tests__/session.service.test.ts
@@ -283,35 +330,53 @@ docker-compose down
 
 ```
 ai-companion-coach-swarm/
+├── docs/
+│   ├── PHASE3_OVERVIEW.md         # Phase 3 implementation summary
+│   ├── ARCHITECTURE.md            # System architecture & design
+│   └── INTEGRATION_RECIPES.md     # Integration examples
 ├── prisma/
-│   ├── schema.prisma      # Database schema
-│   └── seed.ts            # Seed data script
+│   ├── schema.prisma              # Database schema (11 models)
+│   ├── seed.ts                    # Basic seed data
+│   └── seed-enhanced.ts           # Comprehensive seed scenarios
 ├── src/
 │   ├── config/
-│   │   └── env.ts         # Environment validation
+│   │   └── env.ts                 # Environment validation
 │   ├── lib/
-│   │   └── prisma.ts      # Prisma client
-│   ├── routes/
-│   │   ├── sessions.ts    # Session endpoints
-│   │   ├── coaches.ts     # Coach endpoints
-│   │   └── members.ts     # Member endpoints
-│   ├── services/
-│   │   ├── llm.service.ts      # AI/LLM integration
-│   │   ├── session.service.ts  # Session logic
-│   │   ├── coach.service.ts    # Coach logic
-│   │   └── member.service.ts   # Member logic
-│   ├── types/
-│   │   └── index.ts       # TypeScript types
-│   ├── server.ts          # Fastify server setup
-│   └── index.ts           # Entry point
-├── scripts/
-│   ├── check-env.ts       # Environment checker
-│   └── init-migration.sh  # Migration helper
-├── docker-compose.yml     # Production Docker setup
-├── docker-compose.dev.yml # Development Docker setup
-├── Dockerfile             # Application container
-├── Makefile               # Development commands
-└── package.json
+│   │   ├── adapters/              # Extension point interfaces
+│   │   ├── errors.ts              # Custom error classes
+│   │   ├── events.ts              # Domain event system
+│   │   ├── logger.ts              # Structured logging
+│   │   ├── metrics.ts             # Metrics collection
+│   │   └── prisma.ts              # Database client
+│   ├── routes/                    # API endpoints
+│   │   ├── sessions.ts
+│   │   ├── goals.ts
+│   │   ├── templates.ts
+│   │   ├── reflections.ts
+│   │   ├── tags.ts
+│   │   ├── analytics.ts
+│   │   ├── coaches.ts
+│   │   └── members.ts
+│   ├── services/                  # Business logic
+│   │   ├── session.service.ts
+│   │   ├── goal.service.ts
+│   │   ├── template.service.ts
+│   │   ├── reflection.service.ts
+│   │   ├── tag.service.ts
+│   │   ├── analytics.service.ts
+│   │   ├── llm.service.ts
+│   │   ├── coach.service.ts
+│   │   └── member.service.ts
+│   ├── types/index.ts             # TypeScript types (40+ types)
+│   ├── server.ts                  # Fastify server setup
+│   └── index.ts                   # Entry point
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── Makefile                       # Development commands
+├── package.json
+├── tsconfig.json
+└── README.md
 ```
 
 ## 🔧 Development
@@ -343,8 +408,11 @@ npm run db:migrate
 # Reset database (WARNING: destroys data)
 make db-reset
 
-# Seed with initial data
-make db-seed
+# Seed with comprehensive data
+npm run db:seed
+
+# Seed with basic data
+npm run db:seed:basic
 ```
 
 ### Code Quality
@@ -357,8 +425,90 @@ npm run lint
 npm run format
 
 # Type check
-npx tsc --noEmit
+npm run typecheck
 ```
+
+## 🔌 Integration Examples
+
+### Subscribing to Events
+
+```typescript
+import { eventBus, EventTypes } from './lib/events';
+
+// Listen for goal completions
+eventBus.on(EventTypes.GOAL_COMPLETED, async (event) => {
+  const { goalId, memberId, title } = event.payload;
+  console.log(`🎉 Goal completed: ${title}`);
+  // Send notification, update UI, etc.
+});
+```
+
+### Using Adapters
+
+```typescript
+import { adapterRegistry, AdapterNames } from './lib/adapters';
+import { SendGridNotificationAdapter } from './adapters/sendgrid';
+
+// Register real notification adapter
+adapterRegistry.register(
+  AdapterNames.NOTIFICATION,
+  new SendGridNotificationAdapter()
+);
+
+// Now all notification calls will use SendGrid
+```
+
+### Metrics Tracking
+
+```typescript
+import { metrics, MetricNames } from './lib/metrics';
+
+// Record custom metrics
+metrics.incrementCounter('custom.event', 1, { type: 'important' });
+metrics.recordHistogram('api.latency', durationMs, { endpoint: '/api/goals' });
+metrics.setGauge('active.sessions', activeSessions);
+
+// Get snapshot
+const snapshot = metrics.getSnapshot();
+```
+
+## 📊 Demo Data
+
+After running `npm run db:seed`, you'll have:
+
+- **5 Members** with diverse personas and backgrounds
+- **5 Coach Personas** with specialties
+- **10+ Coach Assignments**
+- **4 Active Goals** with milestones in various states
+- **5 Reflections** with moods and tags
+- **3 Session Templates** for common scenarios
+- **10 Tags** across categories (goals, emotions, skills)
+
+Demo credentials:
+- Email: `demo@example.com`
+- Assigned coaches: Empathetic Supporter, Strategic Challenger
+
+## 🚀 Future Extensions
+
+### Immediate Roadmap
+- [ ] Authentication & authorization (JWT, session-based)
+- [ ] Rate limiting & API security
+- [ ] WebSocket support for real-time sessions
+- [ ] Enhanced search (full-text across sessions, goals, reflections)
+- [ ] Export functionality (PDF, Markdown, JSON)
+- [ ] Scheduled sessions & reminders
+- [ ] Coach customization per member
+
+### Long-term Vision
+- [ ] Mobile app (React Native)
+- [ ] Voice/audio coaching sessions
+- [ ] Group coaching capabilities
+- [ ] Advanced analytics with ML insights
+- [ ] Integration with wearables for wellness data
+- [ ] Gamification & achievement system
+- [ ] Peer coaching & community features
+- [ ] Multi-language support
+- [ ] White-label deployments
 
 ## 🤝 Contributing
 
@@ -369,6 +519,7 @@ This is a bounded personal coaching tool. When contributing:
 3. Keep coaching styles distinct and well-documented
 4. Ensure all data is stored persistently and securely
 5. Write tests for new features
+6. Update documentation for new capabilities
 
 ## 📄 License
 
@@ -383,3 +534,5 @@ MIT License - See LICENSE file for details
 ---
 
 **Remember**: This is a companion tool for personal growth, not a replacement for professional coaching or therapy. Use it to structure your reflections, track your progress, and explore your thoughts in a safe, supportive environment.
+
+**Questions?** See [QUICKSTART.md](./QUICKSTART.md) for a quick start guide, or check out the comprehensive documentation in the `docs/` folder.
