@@ -7,6 +7,11 @@ import { prisma } from './lib/prisma';
 import sessionRoutes from './routes/sessions';
 import coachRoutes from './routes/coaches';
 import memberRoutes from './routes/members';
+import goalRoutes from './routes/goals';
+import templateRoutes from './routes/templates';
+import reflectionRoutes from './routes/reflections';
+import tagRoutes from './routes/tags';
+import analyticsRoutes from './routes/analytics';
 
 export async function buildServer() {
   const server = Fastify({
@@ -52,6 +57,11 @@ export async function buildServer() {
   await server.register(sessionRoutes, { prefix: '/api/sessions' });
   await server.register(coachRoutes, { prefix: '/api/coaches' });
   await server.register(memberRoutes, { prefix: '/api/members' });
+  await server.register(goalRoutes, { prefix: '/api/goals' });
+  await server.register(templateRoutes, { prefix: '/api/templates' });
+  await server.register(reflectionRoutes, { prefix: '/api/reflections' });
+  await server.register(tagRoutes, { prefix: '/api/tags' });
+  await server.register(analyticsRoutes, { prefix: '/api/analytics' });
 
   // Error handler
   server.setErrorHandler((error, _request, reply) => {

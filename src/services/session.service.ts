@@ -1,6 +1,10 @@
 import { prisma } from '../lib/prisma';
 import { llmService } from './llm.service';
 import { Message, ActionItem, CoachConfig } from '../types';
+import { eventBus, createSessionStartedEvent, createSessionEndedEvent } from '../lib/events';
+import { metrics, MetricNames } from '../lib/metrics';
+import { logger } from '../lib/logger';
+import { NotFoundError, ValidationError } from '../lib/errors';
 
 export class SessionService {
   /**
@@ -13,7 +17,7 @@ export class SessionService {
     });
 
     if (!member) {
-      throw new Error('Member not found');
+      throw new NotFoundError('Member', memberId);
     }
 
     const coachPersona = await prisma.coachPersona.findUnique({
@@ -21,7 +25,7 @@ export class SessionService {
     });
 
     if (!coachPersona) {
-      throw new Error('Coach persona not found');
+      throw new NotFoundError('Coach Persona', coachPersonaId);
     }
 
     // Check if member has this coach assigned
@@ -35,7 +39,7 @@ export class SessionService {
     });
 
     if (!assignment || !assignment.active) {
-      throw new Error('Coach not assigned to this member');
+      throw new ValidationError('Coach not assigned to this member');
     }
 
     // Create the session
@@ -44,8 +48,13 @@ export class SessionService {
         memberId,
         coachPersonaId,
         transcriptJson: [],
+        status: 'ACTIVE',
       },
     });
+
+    logger.info('Session started', { sessionId: session.id, memberId, coachPersonaId });
+    await eventBus.emit(createSessionStartedEvent(session.id, memberId, coachPersonaId));
+    metrics.incrementCounter(MetricNames.SESSION_STARTED, 1, { coachPersonaId });
 
     // Generate initial greeting
     const greeting = await llmService.generateGreeting(
@@ -87,11 +96,11 @@ export class SessionService {
     });
 
     if (!session) {
-      throw new Error('Session not found');
+      throw new NotFoundError('Session', sessionId);
     }
 
     if (session.endedAt) {
-      throw new Error('Session has already ended');
+      throw new ValidationError('Session has already ended');
     }
 
     // Add user message to transcript
@@ -145,17 +154,17 @@ export class SessionService {
     });
 
     if (!session) {
-      throw new Error('Session not found');
+      throw new NotFoundError('Session', sessionId);
     }
 
     if (session.endedAt) {
-      throw new Error('Session already ended');
+      throw new ValidationError('Session already ended');
     }
 
     const transcript = session.transcriptJson as Message[];
 
     if (transcript.length === 0) {
-      throw new Error('Cannot end session with no messages');
+      throw new ValidationError('Cannot end session with no messages');
     }
 
     // Generate summary and action items
@@ -173,8 +182,16 @@ export class SessionService {
         endedAt: new Date(),
         summaryMarkdown: summary,
         actionItemsJson: actionItems,
+        status: 'COMPLETED',
       },
     });
+
+    const messageCount = transcript.length;
+    logger.info('Session ended', { sessionId, durationMinutes, messageCount });
+    await eventBus.emit(createSessionEndedEvent(sessionId, session.memberId, durationMinutes, messageCount));
+    metrics.incrementCounter(MetricNames.SESSION_ENDED, 1);
+    metrics.recordHistogram(MetricNames.SESSION_DURATION, durationMinutes);
+    metrics.recordHistogram(MetricNames.SESSION_MESSAGE_COUNT, messageCount);
 
     return {
       summary,
@@ -196,7 +213,7 @@ export class SessionService {
     });
 
     if (!session) {
-      throw new Error('Session not found');
+      throw new NotFoundError('Session', sessionId);
     }
 
     return {

@@ -15,12 +15,20 @@ model Member {
   id        String   @id @default(uuid())
   email     String   @unique
   name      String
+  bio       String?  @db.Text
+  timezone  String   @default("UTC")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
   coachAssignments MemberCoachAssignment[]
   sessions         CoachingSession[]
+  goals            CoachingGoal[]
+  reflections      Reflection[]
+  preferences      MemberPreferences?
+  sessionTags      SessionTag[]
+  goalTags         GoalTag[]
+  reflectionTags   ReflectionTag[]
 
   @@map("members")
 }
@@ -32,12 +40,16 @@ model CoachPersona {
   name                     String   // Display name
   styleDescriptionMarkdown String   @db.Text // Markdown description of coaching style
   configJson               Json     @default("{}") // JSON config for AI prompt parameters, temperature, etc.
+  avatarUrl                String?  // Optional avatar image
+  specialties              String[] @default([]) // Tags for areas of expertise
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
   // Relations
   memberAssignments MemberCoachAssignment[]
   sessions          CoachingSession[]
+  goals             CoachingGoal[]
+  templates         SessionTemplate[]
 
   @@map("coach_personas")
 }
@@ -62,23 +74,213 @@ model MemberCoachAssignment {
 
 // CoachingSession represents a single coaching conversation
 model CoachingSession {
-  id             String    @id @default(uuid())
-  memberId       String
-  coachPersonaId String
-  startedAt      DateTime  @default(now())
-  endedAt        DateTime? // null while session is active
-  transcriptJson Json      @default("[]") // Array of message objects: [{role, content, timestamp}]
-  summaryMarkdown String?   @db.Text // Generated at session end
-  actionItemsJson Json?     // Array of action items: [{title, description, priority, dueDate}]
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id              String         @id @default(uuid())
+  memberId        String
+  coachPersonaId  String
+  templateId      String?        // Optional: session based on template
+  status          SessionStatus  @default(ACTIVE)
+  startedAt       DateTime       @default(now())
+  endedAt         DateTime?      // null while session is active
+  transcriptJson  Json           @default("[]") // Array of message objects: [{role, content, timestamp}]
+  summaryMarkdown String?        @db.Text // Generated at session end
+  actionItemsJson Json?          // Array of action items: [{title, description, priority, dueDate}]
+  sentiment       String?        // Overall sentiment: positive, neutral, negative
+  metadataJson    Json           @default("{}") // Extensible metadata
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   // Relations
-  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  coachPersona CoachPersona @relation(fields: [coachPersonaId], references: [id], onDelete: Cascade)
+  member       Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  coachPersona CoachPersona     @relation(fields: [coachPersonaId], references: [id], onDelete: Cascade)
+  template     SessionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  tags         SessionTag[]
 
   @@index([memberId])
   @@index([coachPersonaId])
   @@index([startedAt])
+  @@index([status])
   @@map("coaching_sessions")
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+// CoachingGoal represents a trackable goal
+model CoachingGoal {
+  id              String     @id @default(uuid())
+  memberId        String
+  coachPersonaId  String?    // Optional: associated coach
+  title           String
+  description     String?    @db.Text
+  status          GoalStatus @default(ACTIVE)
+  priority        Priority   @default(MEDIUM)
+  targetDate      DateTime?
+  completedAt     DateTime?
+  progress        Int        @default(0) // 0-100 percentage
+  milestonesJson  Json       @default("[]") // Array of milestone objects
+  metadataJson    Json       @default("{}") // Extensible metadata
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relations
+  member       Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  coachPersona CoachPersona? @relation(fields: [coachPersonaId], references: [id], onDelete: SetNull)
+  tags         GoalTag[]
+
+  @@index([memberId])
+  @@index([status])
+  @@index([priority])
+  @@map("coaching_goals")
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+  ABANDONED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// SessionTemplate represents a reusable coaching session template
+model SessionTemplate {
+  id                  String   @id @default(uuid())
+  coachPersonaId      String?  // Optional: recommended coach
+  key                 String   @unique
+  title               String
+  description         String   @db.Text
+  category            String   // e.g., "career", "wellness", "creativity"
+  promptsJson         Json     @default("[]") // Array of prompt objects
+  estimatedDuration   Int      @default(30) // Minutes
+  difficulty          String   @default("beginner") // beginner, intermediate, advanced
+  isPublic            Boolean  @default(true)
+  usageCount          Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  coachPersona CoachPersona?     @relation(fields: [coachPersonaId], references: [id], onDelete: SetNull)
+  sessions     CoachingSession[]
+
+  @@index([category])
+  @@index([isPublic])
+  @@map("session_templates")
+}
+
+// Reflection represents a standalone quick reflection
+model Reflection {
+  id           String   @id @default(uuid())
+  memberId     String
+  title        String?
+  content      String   @db.Text
+  mood         String?  // e.g., "happy", "stressed", "energized"
+  isPrivate    Boolean  @default(false)
+  metadataJson Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  member Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tags   ReflectionTag[]
+
+  @@index([memberId])
+  @@index([createdAt])
+  @@map("reflections")
+}
+
+// Tag represents a flexible tagging system
+model Tag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  color     String?  @default("#3B82F6") // Hex color
+  category  String?  // Optional category grouping
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  sessions    SessionTag[]
+  goals       GoalTag[]
+  reflections ReflectionTag[]
+
+  @@map("tags")
+}
+
+// Join table for Session Tags
+model SessionTag {
+  id        String   @id @default(uuid())
+  sessionId String
+  tagId     String
+  memberId  String
+  createdAt DateTime @default(now())
+
+  session CoachingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tag     Tag             @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  member  Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, tagId])
+  @@index([sessionId])
+  @@index([tagId])
+  @@map("session_tags")
+}
+
+// Join table for Goal Tags
+model GoalTag {
+  id        String   @id @default(uuid())
+  goalId    String
+  tagId     String
+  memberId  String
+  createdAt DateTime @default(now())
+
+  goal   CoachingGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  tag    Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  member Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, tagId])
+  @@index([goalId])
+  @@index([tagId])
+  @@map("goal_tags")
+}
+
+// Join table for Reflection Tags
+model ReflectionTag {
+  id           String   @id @default(uuid())
+  reflectionId String
+  tagId        String
+  memberId     String
+  createdAt    DateTime @default(now())
+
+  reflection Reflection @relation(fields: [reflectionId], references: [id], onDelete: Cascade)
+  tag        Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  member     Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([reflectionId, tagId])
+  @@index([reflectionId])
+  @@index([tagId])
+  @@map("reflection_tags")
+}
+
+// MemberPreferences stores member-specific preferences
+model MemberPreferences {
+  id                      String   @id @default(uuid())
+  memberId                String   @unique
+  preferredCoachingStyle  String?  // Preference for coach type
+  notificationsEnabled    Boolean  @default(true)
+  emailDigestFrequency    String   @default("weekly") // daily, weekly, never
+  defaultSessionDuration  Int      @default(30) // Minutes
+  privacyLevel            String   @default("private") // private, anonymous, public
+  preferencesJson         Json     @default("{}") // Extensible preferences
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  // Relations
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("member_preferences")
 }
